@@ -1,0 +1,174 @@
+services:
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: eos-rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  postgres:
+    image: postgres:15
+    container_name: eos-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: orders
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: apppass
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U appuser -d orders"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  redis:
+    image: redis:7-alpine
+    container_name: eos-redis
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api-gateway:
+    build:
+      context: .
+      dockerfile: api-gateway/Dockerfile
+    container_name: eos-api-gateway
+    ports:
+      - "8080:8080"
+    environment:
+      COMMON_LOG_LEVEL: info
+      HTTP_ADDR: ":8080"
+      POSTGRES_DSN: "postgres://appuser:apppass@postgres:5432/orders?sslmode=disable"
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+      ORDER_STATUS_URL: "http://order-status-service:8090"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  outbox-worker:
+    build:
+      context: .
+      dockerfile: outbox-worker/Dockerfile
+    container_name: eos-outbox
+    ports:
+      - "8085:8085"
+    environment:
+      COMMON_LOG_LEVEL: info
+      POSTGRES_DSN: "postgres://appuser:apppass@postgres:5432/orders?sslmode=disable"
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+      OUTBOX_HTTP_ADDR: ":8085"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  inventory-service:
+    build:
+      context: .
+      dockerfile: inventory-service/Dockerfile
+    container_name: eos-inventory
+    environment:
+      COMMON_LOG_LEVEL: info
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  payment-service:
+    build:
+      context: .
+      dockerfile: payment-service/Dockerfile
+    container_name: eos-payment
+    environment:
+      COMMON_LOG_LEVEL: info
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+      PAYMENT_FAIL_RATE: "100"  # поставь "100" для проверки компенсации
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  shipping-service:
+    build:
+      context: .
+      dockerfile: shipping-service/Dockerfile
+    container_name: eos-shipping
+    environment:
+      COMMON_LOG_LEVEL: info
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+    restart: unless-stopped
+
+  order-status-service:
+    build:
+      context: .
+      dockerfile: order-status-service/Dockerfile
+    container_name: eos-order-status
+    ports:
+      - "8090:8090"
+    environment:
+      COMMON_LOG_LEVEL: info
+      HTTP_ADDR: ":8090"
+      POSTGRES_DSN: "postgres://appuser:apppass@postgres:5432/orders?sslmode=disable"
+      RABBIT_URL: "amqp://guest:guest@rabbitmq:5672/"
+      REDIS_ADDR: "redis:6379"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: eos-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    restart: unless-stopped
+
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: eos-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./grafana/dashboards:/var/lib/grafana/dashboards:ro
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+volumes:
+  pgdata:
+  grafana:

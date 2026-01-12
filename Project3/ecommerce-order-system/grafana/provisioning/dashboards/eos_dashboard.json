@@ -1,0 +1,133 @@
+{
+  "__inputs": [
+    {
+      "name": "DS_PROMETHEUS",
+      "label": "Prometheus",
+      "description": "",
+      "type": "datasource",
+      "pluginId": "prometheus",
+      "pluginName": "Prometheus"
+    }
+  ],
+  "__requires": [
+    { "type": "grafana", "id": "grafana", "name": "Grafana", "version": "9.0.0" },
+    { "type": "datasource", "id": "prometheus", "name": "Prometheus", "version": "1.0.0" },
+    { "type": "panel", "id": "timeseries", "name": "Time series", "version": "" },
+    { "type": "panel", "id": "stat", "name": "Stat", "version": "" }
+  ],
+  "id": null,
+  "uid": "eos-metrics",
+  "title": "E-Commerce Order System — Metrics",
+  "timezone": "",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5s",
+  "time": { "from": "now-15m", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "type": "datasource",
+        "name": "ds",
+        "label": "Datasource",
+        "query": "prometheus",
+        "current": { "text": "Prometheus", "value": "${DS_PROMETHEUS}" }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "HTTP RPS (requests/sec)",
+      "id": 1,
+      "gridPos": { "x": 0, "y": 0, "w": 16, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{service=\"api-gateway\"}[1m]))",
+          "legendFormat": "api-gateway"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(http_requests_total{service=\"order-status-service\"}[1m]))",
+          "legendFormat": "order-status-service"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP 5xx (errors/sec)",
+      "id": 2,
+      "gridPos": { "x": 16, "y": 0, "w": 8, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "sum(rate(http_requests_total{service=\"api-gateway\",status=~\"5..\"}[5m]))",
+          "legendFormat": "api-gateway 5xx"
+        },
+        {
+          "refId": "B",
+          "expr": "sum(rate(http_requests_total{service=\"order-status-service\",status=~\"5..\"}[5m]))",
+          "legendFormat": "order-status 5xx"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "HTTP Latency p95 (seconds)",
+      "id": 3,
+      "gridPos": { "x": 0, "y": 8, "w": 16, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        {
+          "refId": "A",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"api-gateway\"}[5m])) by (le))",
+          "legendFormat": "api-gateway p95"
+        },
+        {
+          "refId": "B",
+          "expr": "histogram_quantile(0.95, sum(rate(http_request_duration_seconds_bucket{service=\"order-status-service\"}[5m])) by (le))",
+          "legendFormat": "order-status p95"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+    },
+    {
+      "type": "stat",
+      "title": "Outbox Pending",
+      "id": 4,
+      "gridPos": { "x": 16, "y": 8, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "outbox_pending" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "none" }, "overrides": [] },
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"], "fields": "", "values": false }, "orientation": "auto" }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox Sent (events/sec)",
+      "id": 5,
+      "gridPos": { "x": 16, "y": 12, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "rate(outbox_sent_total[5m])", "legendFormat": "sent/sec" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    },
+    {
+      "type": "timeseries",
+      "title": "Outbox Publish Errors (errors/sec)",
+      "id": 6,
+      "gridPos": { "x": 16, "y": 16, "w": 8, "h": 4 },
+      "datasource": { "type": "prometheus", "uid": "${DS_PROMETHEUS}" },
+      "targets": [
+        { "refId": "A", "expr": "rate(outbox_publish_errors_total[5m])", "legendFormat": "errors/sec" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "ops" }, "overrides": [] }
+    }
+  ]
+}
